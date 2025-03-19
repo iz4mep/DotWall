@@ -1,0 +1,1249 @@
+esphome:
+  name: esphome-web-e85598
+  friendly_name: ESP_DOT e85598
+  min_version: 2024.11.0
+  name_add_mac_suffix: false
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
+      CONFIG_SPIRAM_RODATA: y
+
+psram:
+  mode: octal
+  speed: 120MHz
+
+# Enable logging
+logger:
+  #level: INFO
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "zk8faq0lk/sZ/nk9fpYcTfTkaQOM6pZAiiJzkU6ZyGM="
+  on_client_connected:
+    - if:
+        condition:
+          lambda: 'return (0 == client_info.find("Home Assistant "));'
+        then:
+          - lvgl.widget.show: lbl_hastatus
+  on_client_disconnected:
+    - if:
+        condition:
+          lambda: 'return (0 == client_info.find("Home Assistant "));'
+        then:
+          - lvgl.widget.hide: lbl_hastatus
+
+# Allow Over-The-Air updates
+ota:
+- platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+ 
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "ESP_DOT Fallback Hotspot"
+    password: "123456789012"
+
+captive_portal:
+
+web_server:
+
+
+pca9554:
+  - id: 'pca9554a_device'
+    address: 0x20
+    i2c_id: pca_bus
+
+
+i2s_audio:
+  - id: i2s_in
+    i2s_lrclk_pin: GPIO2
+    i2s_bclk_pin: GPIO15
+  - id: i2s_out
+    i2s_lrclk_pin: GPIO38
+    i2s_bclk_pin: GPIO48
+
+
+
+
+speaker:
+  - platform: i2s_audio
+    i2s_audio_id: i2s_out
+    id: speaker_id
+    dac_type: external
+    i2s_dout_pin: GPIO47
+    sample_rate: 48000
+    channel: stereo
+    timeout: never
+    buffer_duration: 100ms
+  - platform: mixer
+    id: mixer_speaker_id
+    output_speaker: speaker_id
+    source_speakers:
+      - id: announcement_spk_mixer_input
+      - id: media_spk_mixer_input
+  - platform: resampler
+    id: media_spk_resampling_input
+    output_speaker: media_spk_mixer_input
+  - platform: resampler
+    id: announcement_spk_resampling_input
+    output_speaker: announcement_spk_mixer_input
+
+media_player:
+  - platform: speaker
+    name: "Dot Media Player"
+    id: speaker_media_player_id
+    buffer_size: 2000000
+    media_pipeline:
+        speaker: media_spk_resampling_input
+        sample_rate: 48000
+        num_channels: 2
+        format: FLAC
+    announcement_pipeline:
+        speaker: announcement_spk_resampling_input
+        sample_rate: 48000
+        num_channels: 1
+        format: FLAC
+    on_announcement:
+      - logger.log: "Announcing!"
+      - lvgl.resume:
+      - light.turn_on:
+           id: back
+           brightness: 80%
+           transition_length: 2s
+#      - lvgl.page.show:
+#           id: annunce_page
+    on_idle:
+      - logger.log: "Playback finished!"
+      - lvgl.page.show:
+           id: clock_page
+
+
+#media_player:
+#  - platform: i2s_audio
+#    name: ESP_DOT Media Player
+#    dac_type: external
+#    i2s_dout_pin: GPIO47
+#    i2s_audio_id: i2s_out
+#    mode: stereo
+
+microphone:
+  - platform: i2s_audio
+    id: i2s_microphone
+    i2s_audio_id: i2s_in
+    i2s_din_pin: GPIO39
+    adc_type: external
+    pdm: false
+    channel: right
+    sample_rate: 16000
+    bits_per_sample: 16bit
+
+
+spi:
+  id: display_qspi
+  type: quad
+  clk_pin: GPIO40
+  data_pins: [GPIO46, GPIO45, GPIO42, GPIO41]
+
+i2c:
+  - id: touchscreen_bus
+    sda: GPIO1
+    scl: GPIO3
+    scan: True
+  - id: pca_bus
+    sda: GPIO11
+    scl: GPIO10
+    scan: True
+
+display:
+  - platform: qspi_dbi
+    model: CUSTOM
+    data_rate: 40MHz
+    id: main_display
+    spi_id: display_qspi
+    color_order: rgb
+    invert_colors: true
+    dimensions:
+      height: 360
+      width: 360
+    cs_pin: GPIO21
+    reset_pin: 
+      pca9554: pca9554a_device
+      number: 1
+    # transform:
+    #   mirror_x: true
+    #   mirror_y: true
+    # rotation: 90
+    #show_test_card: true # must enable update_interval, auto_clear_enable
+    #update_interval: never #comment out for LVGL
+    auto_clear_enabled: false #set to false for LVGL
+    
+    init_sequence:
+      - [ 0xF0, 0x08 ]
+      - [ 0xF2, 0x08 ]
+      - [ 0x9B, 0x51 ]
+      - [ 0x86, 0x53 ]
+      - [ 0xF2, 0x80 ]
+      - [ 0xF0, 0x00 ]
+      - [ 0xF0, 0x01 ]
+      - [ 0xF1, 0x01 ]
+      - [ 0xB0, 0x54 ]
+      - [ 0xB1, 0x3F ]
+      - [ 0xB2, 0x2A ]
+      - [ 0xB4, 0x46 ]
+      - [ 0xB5, 0x34 ]
+      - [ 0xB6, 0xD5 ]
+      - [ 0xB7, 0x30 ]
+      - [ 0xBA, 0x00 ]
+      - [ 0xBB, 0x08 ]
+      - [ 0xBC, 0x08 ]
+      - [ 0xBD, 0x00 ]
+      - [ 0xC0, 0x80 ]
+      - [ 0xC1, 0x10 ]
+      - [ 0xC2, 0x37 ]
+      - [ 0xC3, 0x80 ]
+      - [ 0xC4, 0x10 ]
+      - [ 0xC5, 0x37 ]
+      - [ 0xC6, 0xA9 ]
+      - [ 0xC7, 0x41 ]
+      - [ 0xC8, 0x51 ]
+      - [ 0xC9, 0xA9 ]
+      - [ 0xCA, 0x41 ]
+      - [ 0xCB, 0x51 ]
+      - [ 0xD0, 0x91 ]
+      - [ 0xD1, 0x68 ]
+      - [ 0xD2, 0x69 ]
+      - [ 0xF5, 0x00, 0xA5 ]
+      - [ 0xDD, 0x3F ]
+      - [ 0xDE, 0x3F ]
+      - [ 0xF1, 0x10 ]
+      - [ 0xF0, 0x00 ]
+      - [ 0xF0, 0x02 ]
+      - [ 0xE0, 0x70, 0x09, 0x12, 0x0C, 0x0B, 0x27, 0x38, 0x54, 0x4E, 0x19, 0x15, 0x15, 0x2C, 0x2F ]
+      - [ 0xE1, 0x70, 0x08, 0x11, 0x0C, 0x0B, 0x27, 0x38, 0x43, 0x4C, 0x18, 0x14, 0x14, 0x2B, 0x2D ]
+      - [ 0xF0, 0x10 ]
+      - [ 0xF3, 0x10 ]
+      - [ 0xE0, 0x08 ]
+      - [ 0xE1, 0x00 ]
+      - [ 0xE2, 0x00 ]
+      - [ 0xE3, 0x00 ]
+      - [ 0xE4, 0xE0 ]
+      - [ 0xE5, 0x06 ]
+      - [ 0xE6, 0x21 ]
+      - [ 0xE7, 0x00 ]
+      - [ 0xE8, 0x05 ]
+      - [ 0xE9, 0x82 ]
+      - [ 0xEA, 0xDF ]
+      - [ 0xEB, 0x89 ]
+      - [ 0xEC, 0x20 ]
+      - [ 0xED, 0x14 ]
+      - [ 0xEE, 0xFF ]
+      - [ 0xEF, 0x00 ]
+      - [ 0xF8, 0xFF ]
+      - [ 0xF9, 0x00 ]
+      - [ 0xFA, 0x00 ]
+      - [ 0xFB, 0x30 ]
+      - [ 0xFC, 0x00 ]
+      - [ 0xFD, 0x00 ]
+      - [ 0xFE, 0x00 ]
+      - [ 0xFF, 0x00 ]
+      - [ 0x60, 0x42 ]
+      - [ 0x61, 0xE0 ]
+      - [ 0x62, 0x40 ]
+      - [ 0x63, 0x40 ]
+      - [ 0x64, 0x02 ]
+      - [ 0x65, 0x00 ]
+      - [ 0x66, 0x40 ]
+      - [ 0x67, 0x03 ]
+      - [ 0x68, 0x00 ]
+      - [ 0x69, 0x00 ]
+      - [ 0x6A, 0x00 ]
+      - [ 0x6B, 0x00 ]
+      - [ 0x70, 0x42 ]
+      - [ 0x71, 0xE0 ]
+      - [ 0x72, 0x40 ]
+      - [ 0x73, 0x40 ]
+      - [ 0x74, 0x02 ]
+      - [ 0x75, 0x00 ]
+      - [ 0x76, 0x40 ]
+      - [ 0x77, 0x03 ]
+      - [ 0x78, 0x00 ]
+      - [ 0x79, 0x00 ]
+      - [ 0x7A, 0x00 ]
+      - [ 0x7B, 0x00 ]
+      - [ 0x80, 0x48 ]
+      - [ 0x81, 0x00 ]
+      - [ 0x82, 0x05 ]
+      - [ 0x83, 0x02 ]
+      - [ 0x84, 0xDD ]
+      - [ 0x85, 0x00 ]
+      - [ 0x86, 0x00 ]
+      - [ 0x87, 0x00 ]
+      - [ 0x88, 0x48 ]
+      - [ 0x89, 0x00 ]
+      - [ 0x8A, 0x07 ]
+      - [ 0x8B, 0x02 ]
+      - [ 0x8C, 0xDF ]
+      - [ 0x8D, 0x00 ]
+      - [ 0x8E, 0x00 ]
+      - [ 0x8F, 0x00 ]
+      - [ 0x90, 0x48 ]
+      - [ 0x91, 0x00 ]
+      - [ 0x92, 0x09 ]
+      - [ 0x93, 0x02 ]
+      - [ 0x94, 0xE1 ]
+      - [ 0x95, 0x00 ]
+      - [ 0x96, 0x00 ]
+      - [ 0x97, 0x00 ]
+      - [ 0x98, 0x48 ]
+      - [ 0x99, 0x00 ]
+      - [ 0x9A, 0x0B ]
+      - [ 0x9B, 0x02 ]
+      - [ 0x9C, 0xE3 ]
+      - [ 0x9D, 0x00 ]
+      - [ 0x9E, 0x00 ]
+      - [ 0x9F, 0x00 ]
+      - [ 0xA0, 0x48 ]
+      - [ 0xA1, 0x00 ]
+      - [ 0xA2, 0x04 ]
+      - [ 0xA3, 0x02 ]
+      - [ 0xA4, 0xDC ]
+      - [ 0xA5, 0x00 ]
+      - [ 0xA6, 0x00 ]
+      - [ 0xA7, 0x00 ]
+      - [ 0xA8, 0x48 ]
+      - [ 0xA9, 0x00 ]
+      - [ 0xAA, 0x06 ]
+      - [ 0xAB, 0x02 ]
+      - [ 0xAC, 0xDE ]
+      - [ 0xAD, 0x00 ]
+      - [ 0xAE, 0x00 ]
+      - [ 0xAF, 0x00 ]
+      - [ 0xB0, 0x48 ]
+      - [ 0xB1, 0x00 ]
+      - [ 0xB2, 0x08 ]
+      - [ 0xB3, 0x02 ]
+      - [ 0xB4, 0xE0 ]
+      - [ 0xB5, 0x00 ]
+      - [ 0xB6, 0x00 ]
+      - [ 0xB7, 0x00 ]
+      - [ 0xB8, 0x48 ]
+      - [ 0xB9, 0x00 ]
+      - [ 0xBA, 0x0A ]
+      - [ 0xBB, 0x02 ]
+      - [ 0xBC, 0xE2 ]
+      - [ 0xBD, 0x00 ]
+      - [ 0xBE, 0x00 ]
+      - [ 0xBF, 0x00 ]
+      - [ 0xC0, 0x12 ]
+      - [ 0xC1, 0xAA ]
+      - [ 0xC2, 0x65 ]
+      - [ 0xC3, 0x74 ]
+      - [ 0xC4, 0x47 ]
+      - [ 0xC5, 0x56 ]
+      - [ 0xC6, 0x00 ]
+      - [ 0xC7, 0x88 ]
+      - [ 0xC8, 0x99 ]
+      - [ 0xC9, 0x33 ]
+      - [ 0xD0, 0x21 ]
+      - [ 0xD1, 0xAA ]
+      - [ 0xD2, 0x65 ]
+      - [ 0xD3, 0x74 ]
+      - [ 0xD4, 0x47 ]
+      - [ 0xD5, 0x56 ]
+      - [ 0xD6, 0x00 ]
+      - [ 0xD7, 0x88 ]
+      - [ 0xD8, 0x99 ]
+      - [ 0xD9, 0x33 ]
+      - [ 0xF3, 0x01 ]
+      - [ 0xF0, 0x00 ]
+      - [ 0xF0, 0x01 ]
+      - [ 0xF1, 0x01 ]
+      - [ 0xA0, 0x0B ]
+      - [ 0xA3, 0x2A ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x2B ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x2C ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x2D ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x2E ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x2F ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x30 ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x31 ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x32 ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA3, 0x33 ]
+      - [ 0xA5, 0xC3 ]
+      - delay 1ms
+      - [ 0xA0, 0x09 ]
+      - [ 0xF1, 0x10 ]
+      - [ 0xF0, 0x00 ]
+      - [ 0x2A, 0x00, 0x00, 0x01, 0x67 ]
+      - [ 0x2B, 0x01, 0x68, 0x01, 0x68 ]
+      - [ 0x4D, 0x00 ]
+      - [ 0x4E, 0x00 ]
+      - [ 0x4F, 0x00 ]
+      - [ 0x4C, 0x01 ]
+      - delay 10ms
+      - [ 0x4C, 0x00 ]
+      - [ 0x2A, 0x00, 0x00, 0x01, 0x67 ]
+      - [ 0x2B, 0x00, 0x00, 0x01, 0x67 ]
+      - [ 0x21, 0x00 ]
+      - [ 0x3A, 0x55 ] # color=16
+      - [ 0x11, 0x00 ]
+      - delay 120ms
+
+
+time:
+  - platform: sntp
+    id: time_comp
+    on_time_sync:
+      then:
+        - script.execute: time_update
+
+
+script:
+  - id: time_update
+    then:
+      - lvgl.label.update:
+          id: date_label
+          text: !lambda |-
+            return id(time_comp).now().strftime("%H:%M");
+#      - lvgl.label.update:
+#          id: day_label
+#          text: !lambda |-
+#            return id(time_comp).now().strftime("%H:%M");
+#      - lvgl.label.update:
+#          id: date_label
+#          text:
+#            format: "%s %2d"
+#            args:
+#              - '(new const char *[12]{"GEN", "FEB", "MAR", "APR", "MAG", "GIU", "LUG", "AGO", "SET", "OTT", "NOV", "DIC"})[id(time_comp).now().month-1]'
+#              - 'id(time_comp).now().day_of_month'
+#      - lvgl.label.update:
+#          id: day_label
+#          text:
+#            format: "%s"
+#            args:
+#              - '(new const char *[7]{"DOMENICA", "LUNEDI", "MARTEDI", "MERCOLEDI", "GIOVEDI", "VENERDI", "SABATO"})[id(time_comp).now().day_of_week-1]'
+
+interval:
+  - interval: 1min
+    then:
+      - script.execute: time_update
+
+########################################################
+
+
+
+
+########################################################
+
+sensor:
+  - platform: homeassistant
+    id: kwh_live
+    entity_id: sensor.pzem_004t_v3_power
+    
+    on_value:
+      then:
+      - lvgl.indicator.update:
+          id: kw_needle
+          value: !lambda return x / 10;
+      - lvgl.label.update:
+          id: kw_text
+          text:
+            format: "%.0f W"
+            args: [ 'x' ]
+  - platform: homeassistant
+    id: home_temp
+    entity_id: sensor.stanza_nina_temperature
+    on_value: 
+      then:
+       - lvgl.label.update:
+           id: day_label
+           text:
+            format: "%.1f°"
+            args: [ 'x' ]
+       - lvgl.label.update:
+           id: dhw_temperature_label
+           text:
+            format: "%.1f°"
+            args: [ 'x' ]
+
+
+  - platform: homeassistant
+    id: home_hum
+    entity_id: sensor.stanza_nina_humidity
+    on_value: 
+      then:
+       - lvgl.label.update:
+           id: hum_home
+           text:
+            format: "%.0f%%"
+            args: [ 'x' ]
+       - lvgl.label.update:
+           id: hum_home_a
+           text:
+            format: "%.0f%%"
+            args: [ 'x' ]
+
+
+  - platform: homeassistant
+    id: target_temp
+    entity_id: climate.termostato
+    attribute: temperature
+    on_value:
+      then:
+       - lvgl.label.update:
+           id: dhw_setpoint_label
+           text:
+            format: "%.1f°"
+            args: [ 'x' ]
+       - lvgl.arc.update:
+          id: dhw_setpoint_arc
+          value: !lambda return x * 10;
+
+####################################################  
+
+
+
+binary_sensor:
+  
+  - platform: homeassistant
+    id: led_light
+    entity_id: switch.ledtv
+    
+    on_state:
+       - lvgl.widget.update:
+           id: light_switch
+           state:
+             checked: !lambda return x;
+  
+
+####################################################
+
+text_sensor:
+  
+  - platform: homeassistant
+    id: termostat_mode
+    entity_id: climate.termostato
+    attribute: hvac_action
+    on_value:
+      #then:
+       - lvgl.label.update:
+           id: dhw_mode_label
+           text: !lambda return id(termostat_mode).state;
+       - if:
+           condition:
+            lambda: |- 
+             return id(termostat_mode).state == "off";
+           then:
+             - lvgl.arc.update:
+                id: dhw_setpoint_arc
+                indicator:
+                  arc_color: 0x292929
+             - lvgl.label.update:
+                id: dhw_setpoint_label
+                text_color: 0x292929
+           else:
+             - lvgl.arc.update:
+                id: dhw_setpoint_arc
+                indicator:
+                  arc_color: 0x2095F6          
+             - lvgl.label.update:
+                id: dhw_setpoint_label
+                text_color: 0xFFD200
+  - platform: homeassistant
+    id: alarm_state
+    entity_id: alarm_control_panel.home_alarm
+    on_value:
+       - lvgl.label.update:
+           id: alarm_label_state
+           text: !lambda return id(alarm_state).state;
+       - if:
+           condition:
+            lambda: |- 
+             return id(alarm_state).state != "disarmed";
+           then:
+            - lvgl.matrix.button.update:
+               id: bt_one
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_two
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_tre
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_four
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_five
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_six
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_seven
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_otto
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_nove
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_canc
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_ast
+               control:
+                 hidden: false
+            - lvgl.matrix.button.update:
+               id: bt_zero
+               control:
+                 hidden: false
+            - lvgl.label.update:
+               id: lvgl_label
+               text: "Enter CODE"    
+           else:
+            - lvgl.matrix.button.update:
+               id: bt_one
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_two
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_tre
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_four
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_five
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_six
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_seven
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_otto
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_nove
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_canc
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_ast
+               control:
+                 hidden: true
+            - lvgl.matrix.button.update:
+               id: bt_zero
+               control:
+                 hidden: true
+            - lvgl.label.update:
+               id: lvgl_label
+               text: " "         
+########################################################
+lvgl:
+  
+  style_definitions:
+    - id: date_style      # choose an ID for your definition
+      text_font: unscii_16
+      align: center
+      text_color: 0x000000
+      bg_opa: cover
+      radius: 4
+      pad_all: 2
+
+    - id: header_footer
+      bg_color: 0x2F8CD8
+      bg_grad_color: 0x005782
+      bg_grad_dir: VER
+      bg_opa: COVER
+      border_opa: TRANSP
+      radius: 0
+      pad_all: 0
+      pad_row: 0
+      pad_column: 0
+      border_color: 0x0077b3
+      text_color: 0xFFFFFF
+      width: 100%
+      height: 30
+
+
+  buffer_size: 100%
+
+  
+
+
+  on_idle:
+    - timeout: 60s
+      then:
+        - logger.log: idle timeout
+        - lvgl.page.show:
+           id: clock_page
+        - lvgl.matrix.button.update:
+               id: page_home
+               control:
+                 hidden: true   
+    - timeout: 90s
+      then:
+      - light.turn_on:
+         brightness: 30%
+         id: back
+         transition_length: 5s
+ ##########################################       
+  top_layer:
+
+
+    widgets:
+#      - buttonmatrix:
+#          align: TOP_MID
+#          styles: header_footer
+#          width: 250
+#          height: 35
+#          pad_all: 0
+#          outline_width: 0
+#          items:
+#            styles: header_footer
+#          rows:
+#            - buttons:
+#              - id: page_prev
+#                text: "\uF053"
+#                
+#                on_press:
+#                  then:
+#                    lvgl.page.previous:
+#              - id: page_next
+#                text: "\uF054"
+#                
+#                on_press:
+#                  then:
+#                    lvgl.page.next:
+
+      - buttonmatrix:
+          align: bottom_mid
+          styles: header_footer
+          border_width: 0
+          width: 300
+          height: 30
+          pad_all: 0
+          outline_width: 0
+          id: top_layer
+          items:
+            styles: header_footer
+          rows:
+       
+          
+            - buttons:
+              - id: page_home
+                text: "\uF04B"
+                
+                on_press:
+                  then:
+                    - lvgl.page.next:
+              
+
+
+
+
+
+
+  #full_refresh: true # redraw whole display every time so very slow
+  displays:
+    - main_display
+  touchscreens:
+    - my_touchscreen
+#  theme:
+#    bar:
+#      radius: 0
+#      indicator:
+#        radius: 0
+#        arc_color: red
+ #####################################     
+  pages:
+
+
+    - id: main_page
+      widgets:
+          
+          - obj:
+              height: 360
+              width: 360
+              align: CENTER
+              y: 0
+              bg_color: 0x000000
+              border_width: 0
+              pad_all: 1
+              widgets:
+                - meter:
+                    height: 100%
+                    width: 100%
+                    border_width: 0
+                    align: CENTER
+                    bg_opa: TRANSP
+                    scales:
+                      - range_from: 0
+                        range_to: 300
+                        angle_range: 270
+                        ticks:
+                          count: 135
+                          width: 3
+                          length: 31
+                        indicators:
+                          - tick_style:
+                              start_value: 0
+                              end_value: 300
+                              color_start: 0x00ff00
+                              color_end: 0xff0000
+                      - range_from: 0
+                        range_to: 300
+                        angle_range: 270
+                        ticks:
+                          count: 0
+                        indicators:
+                          - line:
+                              id: kw_needle
+                              width: 8
+                              r_mod: 1
+                              value: 0
+               
+                - obj: # to cover the middle part of meter indicator line
+                    height: 123
+                    width: 123
+                    radius: 100
+                    align: CENTER
+                    border_width: 0
+                    pad_all: 0
+                    bg_color: 0x000000
+                - label:
+                    id: kw_text
+                    text_font: montserrat_40
+                    text_color: 0xffffff
+                    text: "---- W"
+                    align: CENTER
+                    y: -46
+                - label:
+                    text_font: montserrat_40
+                    text_color: 0xffffff
+                    text: "Power"
+                    align: CENTER
+                    y: -6
+         
+
+   #######################################             
+    - id: page_one
+      bg_color: 0x000000               
+      widgets:
+
+        - obj:
+              height: 360
+              width: 360
+              align: CENTER
+              y: 0
+              bg_color: 0x000000
+              border_width: 0
+              pad_all: 1
+              widgets:
+                - label:
+                    text: "\uF1EB"
+                    id: lbl_hastatus
+                    hidden: true
+                    align: TOP_MID
+                    x: 0
+                    y: 0
+                    text_align: AUTO
+                    text_color: 0xFFFFFF
+                - button:
+                    align: CENTER
+                    width: 85
+                    height: 50
+                    id: light_switch
+                    x: 0
+                    y: 0
+                    widgets:
+                      - label:
+                          text_color: 0xFFFFFF
+                          text_font: montserrat_20
+                          align: CENTER
+                          text: 'Light TV'
+                          on_press:
+                            - homeassistant.action:
+                               action: switch.toggle
+                               data:
+                                entity_id: switch.ledtv
+ ############################################
+    - id: clock_page       
+      bg_color: 0x000000
+      widgets:
+        - obj: # Clock container
+           height: 360
+           width: 360
+           bg_color: 0
+           #radius: 100
+           border_width: 0
+           align: center
+           pad_all: 1
+           
+           widgets:
+                
+             - label:
+                 text_font: montserrat_48
+                 text_color: 0xffffff
+                 id: date_label
+                 align: CENTER
+                 y: -40
+             - label:
+                 id: day_label
+                 text_font: montserrat_44
+                 text_color: 0xaefe4f
+                 align: CENTER
+                 y: +40
+                 x: -65
+             - label:
+                 id: hum_home
+                 text_font: montserrat_44
+                 text_color: 0xaefe4f
+                 align: CENTER
+                 y: +40
+                 x: +65
+  ###################################################             
+    - id: keypad_page
+      bg_color: 0x000000
+      widgets:
+        
+        - obj:          
+            width: 360
+            height: 360
+            align: CENTER              
+            border_width: 0
+            border_color: 0
+           # border_opa: 50%
+            pad_all: 0
+           # bg_opa: 80%
+            bg_color: 0x000000
+           # shadow_color: 0
+           # shadow_opa: 50%
+           # shadow_width: 10
+           # shadow_spread: 3
+            radius: 5
+            widgets:
+              - label:
+                  id: lvgl_label
+                  align: CENTER
+                  x: 0
+                  y: -122
+                  text_font: montserrat_22
+                  text_color: 0xaefe4f
+                  text: " "
+                  text_align: CENTER
+              - label:
+                  id: alarm_label_state
+                  align: CENTER
+                  x: 0
+                  y: -150
+                  text_font: montserrat_26
+                  text_color: 0xffffff
+                  text: "_STATO_"
+               
+        - buttonmatrix:
+            id: lvgl_keypad
+            align: CENTER
+            bg_color: 0x000000
+            radius: 50
+            x: 0
+            y: 18
+            width: 290
+            height: 240
+            text_font: montserrat_22
+            items:
+              pressed:
+                bg_color: 0xFFFF00
+            rows:
+              - buttons:
+                  - text: 1
+                    id: bt_one
+                    control:
+                      no_repeat: true
+                  - text: 2
+                    id: bt_two
+                    control:
+                      no_repeat: true
+                  - text: 3
+                    id: bt_tre
+                    control:
+                      no_repeat: true
+              - buttons:
+                  - text: 4
+                    id: bt_four
+                    control:
+                      no_repeat: true
+                  - text: 5
+                    id: bt_five
+                    control:
+                      no_repeat: true
+                  - text: 6
+                    id: bt_six
+                    control:
+                      no_repeat: true
+              - buttons:
+                  - text: 7
+                    id: bt_seven
+                    control:
+                      no_repeat: true
+                  - text: 8
+                    id: bt_otto
+                    control:
+                      no_repeat: true
+                  - text: 9
+                    id: bt_nove
+                    control:
+                      no_repeat: true
+              - buttons:
+                  - text: "\uF55A"
+                    id: bt_ast
+                    key_code: "*"
+                    control:
+                      no_repeat: true
+                  - text: 0
+                    id: bt_zero
+                    control:
+                      no_repeat: true
+                  - text: "\uF00C"
+                    id: bt_canc
+                    key_code: "#"
+                    control:
+                      no_repeat: true
+#################################################
+    - id: termostat_page
+      bg_color: 0x000000
+      widgets:
+        - arc:
+            id: dhw_setpoint_arc
+            align: CENTER
+            y: -5
+            adjustable: true
+            change_rate: 50
+            value: 170
+            min_value: 130
+            max_value: 250
+            width: 300
+            height: 300
+            arc_width: 16
+            arc_color: 0x292929
+            indicator:
+              
+              arc_color: 0x2095F6
+              arc_width: 16
+            knob:
+              bg_color: 0xFFFFFF
+            on_value:
+              then:
+                - if:
+                    condition:
+                       - lambda: 'return id(target_temp).state != x / 10;'
+                    then:
+                       - homeassistant.service:
+                           service: climate.set_temperature
+                           data:
+                             entity_id: climate.termostato
+                           data_template:  
+                             temperature: !lambda return x / 10;
+                
+
+          
+
+        - label:
+            id: dhw_setpoint_label
+            align: CENTER
+            text: "--.-°"
+            y: 0
+            text_font: montserrat_48
+            text_color: 0xFFD200
+        - label:
+            id: dhw_temperature_label
+            align: CENTER
+            text: "--.-°"
+            text_font: montserrat_26
+            text_color: 0x2095F6
+            y: 50
+            x: -35
+        - label:
+            id: hum_home_a
+            text_font: montserrat_26
+            text_color: 0xaefe4f
+            align: CENTER
+            y: +50
+            x: +35         
+        - label:
+            id: dhw_mode_label
+            align: CENTER
+            y: 90
+            text: "OFF"
+            text_font: montserrat_26        
+            border_color: 0x000000
+            text_color: 0xFFD200
+            border_width: 1
+            pad_top: 2
+            pad_bottom: 2
+            pad_left: 8
+            pad_right: 8 
+#        - button:
+#            align: CENTER
+#            width: 45
+#            height: 20
+#            id: temp_plus
+#            x: +60
+#            y: +125
+#            widgets:
+#              - label:
+#                 text_color: 0xFFFFFF
+#                 text_font: montserrat_20
+#                 align: CENTER
+#                 text: "\uF067"   
+#        - button:
+#            align: CENTER
+#            width: 45
+#            height: 20
+#            id: temp_minus
+#            x: -60
+#            y: +125
+#            widgets:
+#              - label:
+#                 text_color: 0xFFFFFF
+#                 text_font: montserrat_20
+#                 align: CENTER
+#                 text: "\uF068"
+
+
+###############################################################
+
+output:
+  - platform: ledc
+    pin: GPIO5
+    id: backlight
+
+
+
+light:
+  - platform: monochromatic
+    output: backlight
+    name: "backlight Light"
+    id: back
+    restore_mode: ALWAYS_ON
+
+  
+
+
+key_collector:
+  - source_id: lvgl_keypad
+    min_length: 4
+    max_length: 4
+    end_keys: "#"
+    end_key_required: true
+    back_keys: "*"
+    allowed_keys: "0123456789*#"
+    timeout: 5s
+    on_progress:
+      - if:
+          condition:
+            lambda: return (0 != x.compare(std::string{""}));
+          then:
+            - lvgl.label.update:
+                id: lvgl_label
+                text: !lambda 'return x.c_str();'
+          else:
+            - lvgl.label.update:
+                id: lvgl_label
+                text: "Enter code"
+    on_result:
+      - if:
+          condition:
+            lambda: return (0 == x.compare(std::string{"1234"}));
+          then:
+            - lvgl.widget.update:
+                id: lvgl_keypad
+                bg_color: 0x00FF00
+          else:
+            - lvgl.widget.update:
+                id: lvgl_keypad
+                bg_color: 0xFF0000
+
+
+
+touchscreen:
+  platform: cst816
+  id: my_touchscreen
+  interrupt_pin: GPIO4
+  reset_pin:
+    pca9554: pca9554a_device
+    number: 0
+  display: main_display
+  i2c_id: touchscreen_bus
+  on_touch: 
+    then:
+      
+      - if:
+          condition:
+            lvgl.is_idle:
+               timeout: 1s
+          then:
+          - lvgl.resume:
+          - light.turn_on:
+             id: back
+             brightness: 80%
+             transition_length: 2s    
+          - lvgl.matrix.button.update:
+               id: page_home
+               control:
+                 hidden: false
